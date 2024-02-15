@@ -2,12 +2,14 @@ package zipappend
 
 import (
 	"encoding/binary"
+	_ "encoding/hex"
+	_ "fmt"
 )
 
 const (
 	fileHeaderSignature      = 0x04034b50
 	directoryHeaderSignature = 0x02014b50
-	directoryEndSignature    = 0x06054b50
+	DirectoryEndSignature    = 0x06054b50
 	directory64LocSignature  = 0x07064b50
 	directory64EndSignature  = 0x06064b50
 	dataDescriptorSignature  = 0x08074b50 // de-facto standard; required by OS X Finder
@@ -24,17 +26,17 @@ const (
 	zipVersion45 = 45 // 4.5 (reads and writes zip64 archives)
 )
 
-type dirEndRecord []byte
+type DirEndRecord []byte
 
-func (r *dirEndRecord) Offset() uint {
+func (r *DirEndRecord) Offset() uint {
 	return uint(binary.LittleEndian.Uint32((*r)[0x10:0x14]))
 }
 
-func (r *dirEndRecord) Size() int {
+func (r *DirEndRecord) Size() int {
 	return int(binary.LittleEndian.Uint32((*r)[0x0c:0x10]))
 }
 
-func (r *dirEndRecord) Records() int {
+func (r *DirEndRecord) Records() int {
 	return int(binary.LittleEndian.Uint16((*r)[0x0a:0x0c]))
 }
 
@@ -42,20 +44,27 @@ type dirHeader []byte
 
 func (h *dirHeader) NameLen() int {
 	return int(binary.LittleEndian.Uint16((*h)[0x1c:0x1e]))
-
 }
 
 func (h *dirHeader) Name() string {
 	return string((*h)[0x2e : 0x2e+h.NameLen()])
 }
 
-func binarySearch(name string, buf []byte, records, recSize int) int {
+func (h *dirHeader) CompressedSize() int {
+	return int(binary.LittleEndian.Uint32((*h)[0x14:0x18]))
+}
+
+func (h *dirHeader) Offset() uint {
+	return uint(binary.LittleEndian.Uint32((*h)[0x2a:0x2e]))
+}
+
+func binarySearch(name string, dirHeaders []byte, records, recSize int) int {
 	s := 0
 	e := records - 1
 	for s <= e {
 		m := (s + e) >> 1
 		offset := m * recSize
-		header := dirHeader(buf[offset : offset+recSize])
+		header := dirHeader(dirHeaders[offset : offset+recSize])
 
 		if name < header.Name() {
 			e = m - 1
@@ -68,6 +77,26 @@ func binarySearch(name string, buf []byte, records, recSize int) int {
 	return -1
 }
 
-func FindKeys(zipInfo []byte, keys []string) {
+type FoundKey struct {
+	Name           string
+	Offset         uint
+	CompressedSize int
+}
 
+func FindKeys(keys []string, dirHeaders []byte, records, recSize int) (fk []FoundKey) {
+
+	fk = make([]FoundKey, 0, len(keys))
+	for _, key := range keys {
+		found := binarySearch(key, dirHeaders, records, recSize)
+		if found != -1 {
+			offset := found * recSize
+			header := dirHeader(dirHeaders[offset : offset+recSize])
+			fk = append(fk, FoundKey{
+				Name:           header.Name(),
+				Offset:         header.Offset(),
+				CompressedSize: header.CompressedSize(),
+			})
+		}
+	}
+	return
 }

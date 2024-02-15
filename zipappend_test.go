@@ -7,8 +7,13 @@ import (
 	"testing"
 )
 
-func loadZip(buf []byte) (dirHeaders []byte, records, recSize int) {
-	eocd := dirEndRecord(buf[len(buf)-directoryEndLen:])
+func loadZip(tb testing.TB, filename string) (dirHeaders []byte, records, recSize int) {
+	buf, err := os.ReadFile(filename)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	eocd := DirEndRecord(buf[len(buf)-directoryEndLen:])
 
 	offset := eocd.Offset()
 	size := eocd.Size()
@@ -34,38 +39,42 @@ func loadZip(buf []byte) (dirHeaders []byte, records, recSize int) {
 	return
 }
 
-func TestFindKey(t *testing.T) {
-	buf, err := os.ReadFile("testdata/" + "sorted-large.zip")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dirHeaders, records, recSize := loadZip(buf)
+func TestBinarySearch(t *testing.T) {
+	dirHeaders, records, recSize := loadZip(t, "testdata/"+"sorted-large.zip")
 
 	found := binarySearch("append-test-01000", dirHeaders, records, recSize)
 	if found != 1003 {
-		t.Errorf("FindKey(key=%q): got %d, want %d", "append-test-01000", found, 1003)
+		t.Errorf("BinarySearch(key=%q): got %d, want %d", "append-test-01000", found, 1003)
 	}
 
 	found = binarySearch("append-test-20000", dirHeaders, records, recSize)
 	if found != 20003 {
-		t.Errorf("FindKey(key=%q): got %d, want %d", "append-test-20000", found, 20003)
+		t.Errorf("BinarySearch(key=%q): got %d, want %d", "append-test-20000", found, 20003)
 	}
 
 	found = binarySearch("append-test-30000", dirHeaders, records, recSize)
 	if found != -1 {
-		t.Errorf("FindKey(key=%q): got %d, want %d", "append-test-30000", found, -1)
+		t.Errorf("BinarySearch(key=%q): got %d, want %d", "append-test-30000", found, -1)
 	}
 }
 
-func BenchmarkFindKey(b *testing.B) {
-	buf, err := os.ReadFile("testdata/" + "sorted-large.zip")
-	if err != nil {
-		b.Fatal(err)
+func TestFindKeys(t *testing.T) {
+	dirHeaders, records, recSize := loadZip(t, "testdata/"+"sorted-large.zip")
+
+	keys := []string{
+		"append-test-00002",
+		"append-test-01234",
+		"append-test-02345",
+		"not-found",
 	}
 
+	fk := FindKeys(keys, dirHeaders, records, recSize)
+	fmt.Println(fk)
+}
+
+func BenchmarkBinarySearch(b *testing.B) {
+	dirHeaders, records, recSize := loadZip(b, "testdata/"+"sorted-large.zip")
 	const pattern = "append-test-%05d"
-	dirHeaders, records, recSize := loadZip(buf)
 
 	for n := 0; n < b.N; n++ {
 		key := fmt.Sprintf(pattern, rand.Intn(records-3))
