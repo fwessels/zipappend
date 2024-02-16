@@ -13,7 +13,7 @@ func loadZip(tb testing.TB, filename string) (dirHeaders []byte, records, recSiz
 		tb.Fatal(err)
 	}
 
-	eocd := DirEndRecord(buf[len(buf)-directoryEndLen:])
+	eocd := DirEndRecord(buf[len(buf)-DirectoryEndLen:])
 
 	offset := eocd.Offset()
 	size := eocd.Size()
