@@ -7,17 +7,38 @@ import (
 	"testing"
 )
 
-func loadZip(tb testing.TB, filename string) (dirHeaders []byte, records, recSize int) {
-	buf, err := os.ReadFile(filename)
+func loadZip(tb testing.TB, fname string) (dirHeaders []byte, records, recSize int) {
+	file, err := os.Open(fname)
 	if err != nil {
 		tb.Fatal(err)
 	}
+	defer file.Close()
 
-	eocd := DirEndRecord(buf[len(buf)-DirectoryEndLen:])
+	var stat os.FileInfo
+	if stat, err = file.Stat(); err != nil {
+		tb.Fatal(err)
+	} else if stat.Size() < DirectoryEndLen {
+		tb.Fatalf("file too small: %d", stat.Size())
+	}
+	start := stat.Size() - DirectoryEndLen
+	bufEocd := [DirectoryEndLen]byte{}
+	if _, err = file.ReadAt(bufEocd[:], start); err != nil {
+		tb.Fatal(err)
+	}
+
+	eocd := DirEndRecord(bufEocd[:])
 
 	offset := eocd.Offset()
 	size := eocd.Size()
 	records = eocd.Records()
+
+	bufCentDir := make([]byte, uint(stat.Size())-offset)
+	var n int
+	if n, err = file.ReadAt(bufCentDir, int64(offset)); err != nil {
+		tb.Fatal(err)
+	} else if n < size {
+		tb.Fatalf("could not read central directory: %d", n)
+	}
 
 	// eodl64 := buf[len(buf)-directory64LocLen-directoryEndLen : len(buf)-directoryEndLen]
 	// fmt.Println(hex.Dump(eodl64))
@@ -29,7 +50,7 @@ func loadZip(tb testing.TB, filename string) (dirHeaders []byte, records, recSiz
 	// fmt.Printf("   size = %08x\n", size)
 	// fmt.Printf("records = %0d\n", records)
 
-	dirHeaders = buf[offset : offset+uint(size)]
+	dirHeaders = bufCentDir[:uint(size)]
 	recSize = int(size / records)
 
 	if false {
