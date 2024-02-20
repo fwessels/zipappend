@@ -68,8 +68,32 @@ func TestFindKeys(t *testing.T) {
 		"not-found",
 	}
 
-	fk := FindKeys(keys, dirHeaders, records, recSize)
-	fmt.Println(fk)
+	fks := FindKeys(keys, dirHeaders, records, recSize)
+	for _, fk := range fks {
+		switch fk.Name {
+		case "append-test-00002":
+			if fk.Offset != 0x21a7 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.Offset, 0x21a7)
+			}
+			if fk.CompressedSize != 0x1000 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.CompressedSize, 0x1000)
+			}
+		case "append-test-01234":
+			if fk.Offset != 0x4e8a97 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.Offset, 0x4e8a97)
+			}
+			if fk.CompressedSize != 0x1000 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.CompressedSize, 0x1000)
+			}
+		case "append-test-02345":
+			if fk.Offset != 0x954014 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.Offset, 0x954014)
+			}
+			if fk.CompressedSize != 0x1000 {
+				t.Errorf("FindKeys(key=%q): got %d, want %d", fk.Name, fk.CompressedSize, 0x1000)
+			}
+		}
+	}
 }
 
 func BenchmarkBinarySearch(b *testing.B) {
