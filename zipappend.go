@@ -2,8 +2,6 @@ package zipappend
 
 import (
 	"encoding/binary"
-	_ "encoding/hex"
-	_ "fmt"
 )
 
 const (
@@ -32,18 +30,39 @@ func (r *DirEndRecord) Offset() uint {
 	return uint(binary.LittleEndian.Uint32((*r)[0x10:0x14]))
 }
 
+func (r *DirEndRecord) SetOffset(offset uint) {
+	binary.LittleEndian.PutUint32(((*r)[0x10:0x14]), uint32(offset))
+}
+
 func (r *DirEndRecord) Size() int {
 	return int(binary.LittleEndian.Uint32((*r)[0x0c:0x10]))
+}
+
+func (r *DirEndRecord) SetSize(size int) {
+	binary.LittleEndian.PutUint32(((*r)[0x0c:0x10]), uint32(size))
 }
 
 func (r *DirEndRecord) Records() int {
 	return int(binary.LittleEndian.Uint16((*r)[0x0a:0x0c]))
 }
 
+func (r *DirEndRecord) SetRecords(records int) {
+	binary.LittleEndian.PutUint16(((*r)[0x08:0x0a]), uint16(records))
+	binary.LittleEndian.PutUint16(((*r)[0x0a:0x0c]), uint16(records))
+}
+
 type dirHeader []byte
 
 func (h *dirHeader) NameLen() int {
 	return int(binary.LittleEndian.Uint16((*h)[0x1c:0x1e]))
+}
+
+func (h *dirHeader) ExtraLen() int {
+	return int(binary.LittleEndian.Uint16((*h)[0x1e:0x20]))
+}
+
+func (h *dirHeader) CommentLen() int {
+	return int(binary.LittleEndian.Uint16((*h)[0x20:0x22]))
 }
 
 func (h *dirHeader) Name() string {
@@ -56,6 +75,14 @@ func (h *dirHeader) CompressedSize() int {
 
 func (h *dirHeader) Offset() uint {
 	return uint(binary.LittleEndian.Uint32((*h)[0x2a:0x2e]))
+}
+
+func (h *dirHeader) SetOffset(offset uint) {
+	binary.LittleEndian.PutUint32((*h)[0x2a:0x2e], uint32(offset))
+}
+
+func (h *dirHeader) Len() int {
+	return directoryHeaderLen + h.NameLen() + h.ExtraLen() + h.CommentLen()
 }
 
 func binarySearch(name string, dirHeaders []byte, records, recSize int) int {
@@ -98,5 +125,22 @@ func FindKeys(keys []string, dirHeaders []byte, records, recSize int) (fk []Foun
 			})
 		}
 	}
+	return
+}
+
+// Append appends the directory of appendCD to baseCD
+func Append(baseCD []byte, appendCD []byte, shift uint) (mergedCD []byte) {
+
+	mergedCD = make([]byte, 0, len(baseCD)+len(appendCD))
+	mergedCD = append(mergedCD, baseCD...)
+	mergedCD = append(mergedCD, appendCD...)
+
+	// Update offsets of directory that is appended
+	for ptr := len(baseCD); ptr < len(mergedCD); {
+		dh := dirHeader(mergedCD[ptr : ptr+directoryHeaderLen])
+		dh.SetOffset(dh.Offset() + uint(shift))
+		ptr += dh.Len()
+	}
+
 	return
 }
