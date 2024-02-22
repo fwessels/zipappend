@@ -69,6 +69,13 @@ func (h *dirHeader) Name() string {
 	return string((*h)[0x2e : 0x2e+h.NameLen()])
 }
 
+func (h *dirHeader) SetName(name string) {
+	// HACK: only do when length hasn't changed
+	if h.NameLen() == len(name) {
+		copy((*h)[0x2e:0x2e+h.NameLen()], name)
+	}
+}
+
 func (h *dirHeader) CompressedSize() int {
 	return int(binary.LittleEndian.Uint32((*h)[0x14:0x18]))
 }
@@ -83,6 +90,27 @@ func (h *dirHeader) SetOffset(offset uint) {
 
 func (h *dirHeader) Len() int {
 	return directoryHeaderLen + h.NameLen() + h.ExtraLen() + h.CommentLen()
+}
+
+type fileHeader []byte
+
+func (f *fileHeader) NameLen() int {
+	return int(binary.LittleEndian.Uint16((*f)[0x1a:0x1c]))
+}
+
+func (f *fileHeader) ExtraLen() int {
+	return int(binary.LittleEndian.Uint16((*f)[0x1c:0x1e]))
+}
+
+func (f *fileHeader) Name() string {
+	return string((*f)[0x2e : 0x1e+f.NameLen()])
+}
+
+func (f *fileHeader) SetName(name string) {
+	// HACK: only do when length hasn't changed
+	if f.NameLen() == len(name) {
+		copy((*f)[0x1e:0x1e+f.NameLen()], name)
+	}
 }
 
 func binarySearch(name string, dirHeaders []byte, records, recSize int) int {
