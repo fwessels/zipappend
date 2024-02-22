@@ -176,7 +176,7 @@ func TestPutAndGet(t *testing.T) {
 		defer wg.Done()
 		tow := testAppend_100(t, archive, 300)
 		atomic.AddUint64(&totalPutOps, uint64(tow))
-		tor, tb := /*0, 0 //*/ testGet(t, archive, 50, 100)
+		tor, tb := testGet(t, archive, 50, 100)
 		atomic.AddUint64(&totalGetOps, uint64(tor))
 		atomic.AddUint64(&totalBytes, uint64(tb))
 	}
