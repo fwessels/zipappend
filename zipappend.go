@@ -159,12 +159,36 @@ func FindKeys(keys []string, dirHeaders []byte, records, recSize int) (fk []Foun
 // Append appends the directory of appendCD to baseCD
 func Append(baseCD []byte, appendCD []byte, shift uint) (mergedCD []byte) {
 
+	// TODO
+	// 1. keep sorted (merge alphabetically sorted)
+	// 2. keep record sizes identical (and increase if necessary)
+
 	mergedCD = make([]byte, 0, len(baseCD)+len(appendCD))
 	mergedCD = append(mergedCD, baseCD...)
 	mergedCD = append(mergedCD, appendCD...)
 
 	// Update offsets of directory that is appended
 	for ptr := len(baseCD); ptr < len(mergedCD); {
+		dh := dirHeader(mergedCD[ptr : ptr+directoryHeaderLen])
+		dh.SetOffset(dh.Offset() + uint(shift))
+		ptr += dh.Len()
+	}
+
+	return
+}
+
+// Append appends the directory of appendCD to baseCD
+func AppendSplit(appendCD []byte, shift uint) (mergedCD []byte) {
+
+	// TODO
+	// 1. keep sorted (merge alphabetically sorted)
+	// 2. keep record sizes identical (and increase if necessary)
+
+	mergedCD = make([]byte, 0, len(appendCD) /*len(baseCD)+*/)
+	mergedCD = append(mergedCD, appendCD...)
+
+	// Update offsets of directory that is appended
+	for ptr := 0; ptr < len(mergedCD); {
 		dh := dirHeader(mergedCD[ptr : ptr+directoryHeaderLen])
 		dh.SetOffset(dh.Offset() + uint(shift))
 		ptr += dh.Len()

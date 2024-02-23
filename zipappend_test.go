@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -65,6 +66,49 @@ func loadCentDir(tb testing.TB, fname string) (dirHeaders []byte, records, recSi
 	return
 }
 
+func loadCentDirStandalone(tb testing.TB, fname string) (dirHeaders []byte, records, recSize int) {
+	file, err := os.Open(fname)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer file.Close()
+
+	var stat os.FileInfo
+	if stat, err = file.Stat(); err != nil {
+		tb.Fatal(err)
+	} else if stat.Size() < DirectoryEndLen {
+		tb.Fatalf("file too small: %d", stat.Size())
+	}
+	start := stat.Size() - DirectoryEndLen
+	bufEocd := [DirectoryEndLen]byte{}
+	if _, err = file.ReadAt(bufEocd[:], start); err != nil {
+		tb.Fatal(err)
+	}
+
+	eocd := DirEndRecord(bufEocd[:])
+
+	size := eocd.Size()
+	records = eocd.Records()
+
+	bufCentDir := make([]byte, uint(stat.Size()))
+	var n int
+	if n, err = file.ReadAt(bufCentDir, 0); err != nil {
+		tb.Fatal(err)
+	} else if n < size {
+		tb.Fatalf("could not read central directory: %d", n)
+	}
+
+	dirHeaders = bufCentDir[:uint(size)]
+	if records > 0 {
+		recSize = int(size / records)
+	}
+
+	if false {
+		dumpCentDir(dirHeaders, records, recSize)
+	}
+	return
+}
+
 func loadFiles(tb testing.TB, fname string) (files []byte) {
 	file, err := os.Open(fname)
 	if err != nil {
@@ -97,6 +141,20 @@ func loadFiles(tb testing.TB, fname string) (files []byte) {
 	}
 
 	return
+}
+
+func statFiles(tb testing.TB, fname string) int64 {
+	file, err := os.Open(fname)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer file.Close()
+
+	var stat os.FileInfo
+	if stat, err = file.Stat(); err != nil {
+		tb.Fatal(err)
+	}
+	return stat.Size()
 }
 
 func TestBinarySearch(t *testing.T) {
@@ -191,24 +249,100 @@ func TestPutAndGet(t *testing.T) {
 	fmt.Println("total GET-bytes:", totalBytes/1024/1024, "MB")
 }
 
+func getFilesName(fname string) string {
+	parts := strings.Split(fname, ".")
+	return strings.Join(parts, "_files.")
+}
+
+func getDirName(fname string) string {
+	parts := strings.Split(fname, ".")
+	return strings.Join(parts, "_dir.")
+}
+
 func testAppend_100(t *testing.T, archive string, batches int) (totalOps int) {
 	var buf []byte
 	var err error
 	if buf, err = os.ReadFile("testdata/" + "dummy.zip"); err != nil {
 		t.Fatal(err)
-	} else if err = os.WriteFile(archive, buf, 0644); err != nil {
+	} else if err = os.WriteFile(getDirName(archive), buf, 0644); err != nil {
+		t.Fatal(err)
+	} else if err = os.WriteFile(getFilesName(archive), []byte{}, 0644); err != nil {
 		t.Fatal(err)
 	}
 	counter := 1
 	for i := 0; i < batches; i++ {
-		to, _ := appendZip(t, archive, "testdata/"+"append100.zip", &counter)
+		to, _ := appendZipSplit(t, archive, "testdata/"+"append100.zip", &counter)
 		totalOps += to
 	}
 	return
 }
 
 func TestAppend300_100(t *testing.T) {
-	testAppend_100(t, "test.zip", 300)
+func appendZipSplit(t *testing.T, base, appnd string, counter *int) (totalOps int, err error) {
+	patchFilenameInPlace := func(centDir, files []byte, counter *int) {
+		for ptr := 0; ptr < len(centDir); {
+			name := "append-test-" + fmt.Sprintf("%05d", *counter)
+
+			// patch name in central directory
+			dh := dirHeader(centDir[ptr : ptr+directoryHeaderLen])
+			dh.SetName(name)
+
+			// patch name in file section of zip file
+			fh := fileHeader(files[dh.Offset() : dh.Offset()+fileHeaderLen])
+			fh.SetName(name)
+
+			ptr += dh.Len()
+			(*counter)++
+		}
+	}
+
+	baseFilesSize := statFiles(t, getFilesName(base))
+	appendCD, appendRecords, _ := loadCentDir(t, appnd)
+	appendFiles := loadFiles(t, appnd)
+	patchFilenameInPlace(appendCD, appendFiles, counter)
+
+	{
+		var f *os.File
+		// TODO: test os.Truncate + O_WRONLY | O_APPEND
+		if f, err = os.OpenFile(getFilesName(base), os.O_RDWR, 0); err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+
+		if _, err := f.Seek(baseFilesSize, 0); err != nil {
+			log.Fatal(err)
+		}
+
+		f.Write(appendFiles)
+	}
+
+	baseCD, baseRecords, _ := loadCentDirStandalone(t, getDirName(base))
+	mergedCD := AppendSplit(appendCD, uint(baseFilesSize))
+
+	{
+		var fdir *os.File
+
+		// TODO: test os.Truncate + O_WRONLY | O_APPEND
+		if fdir, err = os.OpenFile(getDirName(base), os.O_RDWR, 0); err != nil {
+			log.Fatal(err)
+		}
+		defer fdir.Close()
+
+		if _, err := fdir.Seek(int64(len(baseCD)), 0); err != nil {
+			log.Fatal(err)
+		}
+
+		buf := [DirectoryEndLen]byte{}
+		copy(buf[:], []byte{0x50, 0x4b, 0x05, 0x06})
+		eocd := DirEndRecord(buf[:])
+		eocd.SetOffset(uint(int(baseFilesSize) + len(appendFiles)))
+		eocd.SetSize(len(baseCD) + len(mergedCD))
+		eocd.SetRecords(baseRecords + appendRecords)
+
+		fdir.Write(mergedCD)
+		fdir.Write(eocd)
+	}
+	return appendRecords, nil
 }
 
 func appendZip(t *testing.T, base, appnd string, counter *int) (totalOps int, err error) {
