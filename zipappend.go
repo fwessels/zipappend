@@ -22,7 +22,25 @@ const (
 	// Version numbers.
 	zipVersion20 = 20 // 2.0
 	zipVersion45 = 45 // 4.5 (reads and writes zip64 archives)
+
+	// Limits for non zip64 files.
+	uint16max = (1 << 16) - 1
+	uint32max = (1 << 32) - 1
 )
+
+type DirEndRecord64 []byte
+
+func (r64 *DirEndRecord64) Records() int {
+	return int(binary.LittleEndian.Uint64((*r64)[0x20:0x28]))
+}
+
+func (r64 *DirEndRecord64) Size() int {
+	return int(binary.LittleEndian.Uint64((*r64)[0x28:0x30]))
+}
+
+func (r64 *DirEndRecord64) Offset() uint {
+	return uint(binary.LittleEndian.Uint64((*r64)[0x30:0x38]))
+}
 
 type DirEndRecord []byte
 
